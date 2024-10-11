@@ -117,7 +117,11 @@ void main() {
 ```
 
 - 위 코드처럼 `someString.repeat(3)` 의 형태로 매개변수를 담아서 함수를 사용할 수 있습니다.
-- 
+
+</br>
+
+
+##📌 충돌 대응
 
 ### 같은 클래스에 대한 여러개의 확장들 간의 중복 문제 해결
 - 같은 클래스에 대한 extension들에서 중복된 method name을 사용한다면 extension클래스 이름을 명시해서 어떤 확장에서 그 기능을 부르는지 명학하게 할 수 있습니다.
@@ -130,3 +134,29 @@ void main() {
 ```
 - 이와 같이 특정 확장을 명시적으로 호출함으로써 중복된 메서드 이름 충돌 문제를 해결할 수 있습니다.
   
+</br>
+
+### show와 hide의 사용
+- show는 특정 요소만 가져오고 나머지는 가져오지 않도록 할 때 사용합니다. 예를 들어, 한 라이브러리에서 특정 함수나 클래스만 필요한 경우에 사용합니다.
+```dart
+import 'myExtensionA.dart' show change();
+
+void main() {
+  String a = "a";
+  a.change();
+  // a.reverse();  // myExtensionA에서 현재 reverse()는 import되지 않음
+}
+```
+- hide는 특정 요소만 제외하고 나머지는 모두 가져올 때 사용합니다. 라이브러리의 대부분을 사용하고 싶지만, </br> 일부 함수나 클래스는 제외하고 싶을 때 유용합니다.
+```dart
+// main.dart 파일
+import 'myExtensionA.dart' hide reverse;
+
+void main() {
+  String a = "a";
+  a.change();  // change메서드는 import되었음
+  // a.reverse();  // 에러: MyExtensionA import되지 않았음
+}
+```
+  
+</br>
