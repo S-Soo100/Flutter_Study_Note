@@ -23,9 +23,20 @@ Dart 언어에서 제공하는 이 기능은 라이브러리나 프레임워크�
 ---
 
 </br>
+
+## 📌 2. `extension method` 사용시 주의사항
+
+- 확장 메서드는 컴파일 시점의 타입 정보를 기반으로 해당 타입을 확장 시킵니다. 이는 정적(static) 성질을 가집니다.
+- 그러므로 `dynamic` 타입으로 선언한 변수에는, 이후 코드 내에서 해당 변수의 타입이 명확하더라도 확장 메서드 사용이 불가능합니다.
+  - `dynamic`은 동적 타입으로 컴파일시 타입 체크를 하지 않기 떄문입니다.
+  - 하지만 `var`타입으로 선언하면 초기화 시점에 타입을 결정하고 동작하기 때문에 확장 메서드 사용이 가능합니다.
+- 추가적으로 이러한 정적인 성격 덕분에 static함수 호출과 같이 런타임 시점에서의 동적 디스패치나 추가 검색을 필요로 하지 않아 성능이 뛰어납니다.
+  
+
+---
 </br>
 
-## 📌 2. `extension method`의 실전 활용
+## 📌 3. `extension method`의 실전 활용
 
 ### 예시 코드: `String` 클래스 확장하기
 
@@ -100,6 +111,36 @@ void main() {
 ```
 </br>
 
+### static helper method를 확장 메서드에서 사용
+- static helper 메서드 add(int a, int b)를 정의한 후, 확장메서드 `IntExtension` 확장을 통해 int 타입에 addWithHelper()라는 확장 메서드를 추가했습니다.
+- 이 메서드에 내부적으로 static helper method인 add를 호출하여 두 숫자를 더하도록 구현합니다.
+- 이러한 예시 구조처럼 확장 메서드에서 '정적 헬퍼 메서드 (static helper method)'를 포함할 수 있습니다.
+```dart
+class MathUtils {
+  // static helper method: 두 값을 더하는 함수
+  static int add(int a, int b) {
+    return a + b;
+  }
+}
+
+extension IntExtension on int {
+  // 확장 메서드: 두 숫자를 더하기 위해 static helper method 사용
+  int addWithHelper(int other) {
+    return MathUtils.add(this, other);  // static helper method 호출
+  }
+}
+
+void main() {
+  int a = 10;
+  int b = 20;
+
+  // 확장 메서드 호출
+  print(a.addWithHelper(b));  // 출력: 30
+}
+```
+- 이를 통해 확장 메서드가 단순히 추가적인 동작을 제공하는 역할을 하도록 하고, 복잡한 계산 로직은 helper 메서드에 맡김으로써 책임을 분리할 수 있습니다.
+  
+
 ### argument가 있는 경우
 
 ```dart
@@ -121,7 +162,7 @@ void main() {
 </br>
 
 
-##📌 충돌 대응
+## 📌 4. 충돌 대응
 
 ### 같은 클래스에 대한 여러개의 확장들 간의 중복 문제 해결
 - 같은 클래스에 대한 extension들에서 중복된 method name을 사용한다면 extension클래스 이름을 명시해서 어떤 확장에서 그 기능을 부르는지 명학하게 할 수 있습니다.
@@ -159,4 +200,47 @@ void main() {
 }
 ```
   
-</br>
+- 추가적으로, `as` 키워드를 이용해 임의 이름으로 지정해서, `ExA(a).reverse()`로 호출 할 수 있습니다.
+
+---
+
+## 📌 5. Unnamed Extension
+- extension class의 이름을 지정하지 않을 수 있습니다.
+- 하지만 이 경우, 해당 extension class가 선언된 라이브러리 내에서만 그 확장 기능들을 사용할 수 있습니다.
+- 한 파일 내에서만 제한적으로 어떠한 확장 기능을 사용할 수 있게 하려면 `Unnamed Extension(익명 확장 클래스)`를 사용하자!
+```dart
+extnsion on String {
+  // 띄어쓰기를 제거하고 비었는지 확인함
+  bool get isBlank => trim.isEmpty; 
+}
+```
+
+---
+
+## 📌 6. Generic Extension: 제너릭<T> 확장 구현
+- Dart에서 확장 메서드는 특정 클래스에 새로운 기능을 추가하는 데 사용되는데, 제너릭을 사용하면 여러 타입에 대해 확장 메서드를 정의할 수 있으며, 다양한 타입에 대해 공통적인 로직을 적용할 수 있으므로, 코드의 중복을 줄이고 유지보수를 쉽게 할 수 있습니다.
+  
+- 제너릭 확장을 사용할 때 특정 타입에 대해 동작하도록 제약을 걸 수 있습니다. 예를 들면 List는 List인데 num(double, int)만 가지도록 하는 것 처럼 말이죠
+- 제너릭 타입에 제약 조건을 추가하면 특정 상위 클래스나 인터페이스에 속하는 타입만 확장할 수 있습니다.
+```dart
+extension ListAverage<T extends num> on List<T> {
+  // 숫자 리스트의 평균을 계산하는 확장 메서드
+  double average() {
+    if (this.isEmpty) return 0;
+    return this.reduce((value, element) => value + element) / this.length;
+  }
+}
+
+void main() {
+  List<int> intList = [1, 2, 3, 4, 5];
+  List<double> doubleList = [1.5, 2.5, 3.5];
+
+  print(intList.average());  // 출력: 3.0
+  print(doubleList.average());  // 출력: 2.5
+
+  // List<String> stringList = ['a', 'b'];  // 에러: num 타입이 아님
+}
+```
+
+---
+
