@@ -1,5 +1,5 @@
 # Dart 언어의 `extension method` 이해하기
-
+<img src="https://github.com/user-attachments/assets/fa72a18f-cec1-43f1-ab4f-d3623e1e30bb" width="70%" alt="banner_ext" align="center"/>
 
 한글로 번역하면 `확장 메서드`. 
 API, 외부 라이브러리, 내가 쓰는 기본 class들에 커스텀해서 추가 기능을 붙이고 싶다면? </br>
