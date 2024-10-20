@@ -1,7 +1,8 @@
 # Dart 언어의 `class modifier` 이해하기
-<img src="https://github.com/user-attachments/assets/fa72a18f-cec1-43f1-ab4f-d3623e1e30bb" width="70%" alt="banner_ext" align="center"/>
+<img src="https://github.com/user-attachments/assets/eb9309b7-e6f2-4cd6-a164-d5cc983e04c2" width="70%" alt="banner" align="center"/>
 
-클래스 모디파이어(클래스 수정자 혹은 제어자, Class Modifiers)란, class 혹은 mixin이 라이브러리 내/외부로 사용되는 방식을 결정합니다.
+<br/>
+클래스 모디파이어(클래스 수정자 혹은 제어자, Class Modifiers)란, class 혹은 mixin이 라이브러리 내/외부로 사용되는 방식을 결정합니다.<br/>
 모디파이어 키워드는 class 혹은 mixin 바로 앞에 배치하며 mixin은 그 자체로 제어자 키워드중 하나이기도 하며
 클래스의 사용 방식에(프로젝트 내에서 그 클래스가 사용되기를 '원하는'방식에) 직접적으로 관여합니다.
 </br>
@@ -111,3 +112,77 @@ switch (shape) {
 
 ```
 
+## 4. base
+- 클래스 또는 믹스인 구현의 상속을 강제하는 모디파이어 입니다.
+- base 클래스는 상속받을 수는 있지만 구현(implement)하거나 mixin사용은 불가능합니다.(명시적인 상속 제한이라 부릅니다.)
+- 파일 경계를 넘어 상속이 가능하며, 상속받는 모든 클래스는 base, final, sealed중 하나의 키워드를 표시해야 합니다.
+```dart
+-----a.dart
+base class Vehicle {
+  void moveForward(int meters) {
+    // ...
+  }
+}
+-----b.dart
+import 'a.dart';
+
+// Can be constructed.
+Vehicle myVehicle = Vehicle();
+
+// Can be extended.
+base class Car extends Vehicle {
+  int passengers = 4;
+  // ...
+}
+
+// ERROR: Can't be implemented.
+base class MockVehicle implements Vehicle {
+  @override
+  void moveForward() {
+    // ...
+  }
+}
+```
+
+## 5. interface
+- 본래 Dart에서는 Java등과 다르게 interface라는 별도의 키워드가 없었으며 모든 클래스는 자동으로 인터페이스 역할을 했습니다.<br/>interface 키워드는 Dart 3.0 업데이트와 함께 추가되어 이를 통해 명시적으로 인터페이스로 사용할 클래스를 정의할 수 있습니다. 
+- 이 키워드는 클래스 자체를 인터페이스로 사용하도록 구성하여 implements를 통해 내부 메서드들을 구현하도록 강제합니다.
+- 상속을 방지하여 내부 로직이 의도치 않게 변경되는 것을 방지하고 `fragile base class problem`를 줄일 수 있습니다.(이 또한 다른 글에서 다루겠습니다)
+- 추상 메서드가 아니라 구현 메서드도 내부에 포함할 수 있습니다.
+```dart
+interface class Vehicle {
+  void moveForward(int meters) {
+    // ...
+  }
+}
+
+// 생성자 사용 가능
+Vehicle myVehicle = Vehicle();
+
+// ERROR!!: 상속 불가
+class Car extends Vehicle {
+  int passengers = 4;
+  // ...
+}
+
+// 구현 가능
+class MockVehicle implements Vehicle {
+  @override
+  void moveForward(int meters) {
+    // ...
+  }
+}
+```
+
+## 6. mixin(믹스인)
+- 상속, 구현과는 별개로 여러 클래스 위계에서 재사용 될 수 있는 코드를 만듭니다. <br/>특정 클래스 상속이 불가능하며 생성자 선언도 불가능합니다. 마찬가지로 자체 인스턴스 화도 불가능합니다.
+- 기능을 재사용하고 코드 중복을 줄이는데 큰 도움을 주며,<br/>여러 클래스에서 사용할 내용을 하나의 mixin에서 한 번에 제공하도록 설계되어 있습니다.
+- with 키워드로 클래스 명 혹은 부모 클래스 명 뒤에 기재하며, 복수 사용이 가능합니다.
+- 추상 메서드/추상 변수를 가질 수 있으며, 믹스인 사용시 꼭 이를 구현해야 합니다.
+- mixin class로 구성해서 상속과 믹스인 두 가지 용도로 사용하는 것 또한 가능합니다.
+```dart
+mixin class Both {}
+
+class UseAsMixin with Both {}
+class UseAsSuperclass extends Both {}
+```
