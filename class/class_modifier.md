@@ -186,3 +186,32 @@ mixin class Both {}
 class UseAsMixin with Both {}
 class UseAsSuperclass extends Both {}
 ```
+
+# modifier combinations
+- modifier는 여러개를 조합해서 붙일 수 있습니다. 그중 아래 표의 조합만이 가능하며, 이는 클래스의 기능을 더 명확하게 제한해줍니다.
+- 아까보다 조금 더 긴 표를 보겠습니다. 아래 조합만 valid하며, 표기되지 않은 조합(mixin abstract등)은 사용이 불가능 합니다.
+- 이 조합을 통해 우리는 각각의 클래스가 상속, 구현, 믹스인이 가능한지 불가능한지를 정의합니다.<br/>
+abstract interface class등을 통해 구현만 가능한 `pure`한 인터페이스를 정의하는 것도 가능합니다.
+  <br/>
+
+
+
+
+| Class Type                    |Construct | Extend | Implement | Mixin | Exhausive |
+|-------------------------------|------------|---------------|------------------|--------------|--------|
+| `class`                       | ✔          | ✔             | ✔                |              |        |
+| `base class`                  | ✔          | ✔             |                  |              |        |
+| `interface class`             | ✔          |               | ✔                |              |        |
+| `final class`                 | ✔          |               |                  |              |        |
+| `sealed class`                |            |               |                  |              | ✔      |
+| `abstract class`              |            | ✔             | ✔                |              |        |
+| `abstract base class`         |            | ✔             |                  |              |        |
+| `abstract interface class`    |            |               | ✔                |              |        |
+| `abstract final class`        |            |               |                  |              |        |
+| `mixin class`                 | ✔          | ✔             | ✔                | ✔            |        |
+| `base mixin class`            | ✔          | ✔             |                  | ✔            |        |
+| `abstract mixin class`        |            | ✔             | ✔                | ✔            |        |
+| `abstract base mixin class`   |            | ✔             |                  | ✔            |        |
+| `mixin`                       |            |               | ✔                | ✔            |        |
+| `base mixin`                  |            |               |                  | ✔            |        |
+
