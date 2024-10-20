@@ -1,4 +1,4 @@
-# Dart 언어의 `class modifier` 이해하기
+# Dart 언어의 `class modifier` 이해하기
 <img src="https://github.com/user-attachments/assets/eb9309b7-e6f2-4cd6-a164-d5cc983e04c2" width="70%" alt="banner" align="center"/>
 
 <br/>
