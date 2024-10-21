@@ -1,4 +1,4 @@
-# Dart 언어의 `class modifier` 이해하기
+# Dart 언어의 `class modifier`와 `fragile base class problem`
 <img src="https://github.com/user-attachments/assets/eb9309b7-e6f2-4cd6-a164-d5cc983e04c2" width="70%" alt="banner" align="center"/>
 
 <br/>
@@ -215,3 +215,29 @@ abstract interface class등을 통해 구현만 가능한 `pure`한 인터페이
 | `mixin`                       |            |               | ✔                | ✔            |        |
 | `base mixin`                  |            |               |                  | ✔            |        |
 
+
+# Fragile Base Class Problem
+
+확장(extends)기능은 코드를 재사용할 수 있는 좋은 기능이나, 클래스 간의 의존 관계를 만들기 때문에 가끔 문제를 일으키고는 합니다.<br/>
+**Fragile Base Class Problem**은 객체 지향 프로그래밍에서 발생하는 `객체 지향 프로그래밍 시스템의 근본적인 아키텍처 문제`로, **기본 클래스(base class) 혹은 부모 클래스(super class)**를 수정할 때 그 클래스를 상속받는 **파생 클래스(derived class)**에 예상치 못한 문제가 발생할 수 있다는 개념을 의미합니다. 이 문제는 상속 관계에 있는 클래스 구조에서 주로 발생합니다.
+
+## 기본 클래스의 의존성
+
+기본 클래스는 파생 클래스들이 의존하는 부모 클래스입니다. 이 기본 클래스에 변경이 가해지면, 해당 클래스를 상속받은 모든 파생 클래스에 영향을 미칠 수 있습니다. Dart에서도 상속을 사용하여 기본 클래스를 확장할 수 있습니다. 기본 클래스의 메서드나 필드를 수정하거나 제거하면 파생 클래스의 동작이 예기치 않게 변할 수 있습니다.
+
+### 예시 코드
+```dart
+class Animal {
+  String sound() {
+    return "Some generic animal sound";
+  }
+}
+
+class Dog extends Animal {
+  @override
+  String sound() {
+    return "Bark!";
+  }
+}
+```
+위 코드는 Animal이라는 기본 클래스를 상속받은 Dog 클래스가 sound() 메서드를 재정의하는 예시입니다. 기본 클래스에 변경이 생기면 이 변경은 상속받는 Dog 클래스에도 영향을 미칩니다.
