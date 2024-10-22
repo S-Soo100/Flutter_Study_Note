@@ -218,26 +218,166 @@ abstract interface class등을 통해 구현만 가능한 `pure`한 인터페이
 
 # Fragile Base Class Problem
 
+## 문제 정의 
 확장(extends)기능은 코드를 재사용할 수 있는 좋은 기능이나, 클래스 간의 의존 관계를 만들기 때문에 가끔 문제를 일으키고는 합니다.<br/>
-**Fragile Base Class Problem**은 객체 지향 프로그래밍에서 발생하는 `객체 지향 프로그래밍 시스템의 근본적인 아키텍처 문제`로, **기본 클래스(base class) 혹은 부모 클래스(super class)**를 수정할 때 그 클래스를 상속받는 **파생 클래스(derived class)**에 예상치 못한 문제가 발생할 수 있다는 개념을 의미합니다. 이 문제는 상속 관계에 있는 클래스 구조에서 주로 발생합니다.
+**Fragile Base Class Problem**은 객체 지향 프로그래밍에서 발생하는 객체 지향 프로그래밍 시스템의 근본적인 아키텍처 문제로,<br/>
+**`부모 클래스`의 변경이 `자식 클래스`에 side-effect를 발생시키는 현상을 말합니다.**
 
-## 기본 클래스의 의존성
-
-기본 클래스는 파생 클래스들이 의존하는 부모 클래스입니다. 이 기본 클래스에 변경이 가해지면, 해당 클래스를 상속받은 모든 파생 클래스에 영향을 미칠 수 있습니다. Dart에서도 상속을 사용하여 기본 클래스를 확장할 수 있습니다. 기본 클래스의 메서드나 필드를 수정하거나 제거하면 파생 클래스의 동작이 예기치 않게 변할 수 있습니다.
-
-### 예시 코드
+### 예시 코드 1
 ```dart
-class Animal {
-  String sound() {
-    return "Some generic animal sound";
+class Parent {
+  void methodA() {
+    print("A");
+    methodB();  // methodB 호출
+  }
+  
+  void methodB() { 
+    print("B");
   }
 }
 
-class Dog extends Animal {
+class Child extends Parent {
   @override
-  String sound() {
-    return "Bark!";
+  void methodB() {
+    super.methodB();  // 부모의 methodB도 호출
+    print("Child's B");
   }
 }
 ```
-위 코드는 Animal이라는 기본 클래스를 상속받은 Dog 클래스가 sound() 메서드를 재정의하는 예시입니다. 기본 클래스에 변경이 생기면 이 변경은 상속받는 Dog 클래스에도 영향을 미칩니다.
+가장 쉬운 예시로 위 코드를 보겠습니다.<br/>
+이 예시 코드에서 만약 부모 클래스의 methodA가 수정되어 methodB를 두 번 호출하도록 변경된다면 자식 클래스의 동작도 예상치 못하게 변경됩니다.<br/>
+예를 들어 Child.methodA();를 호출한다면 Child는 알지 못하는 변경에 의해 본인의 methodB를 두 번 부르게 됩니다.
+<br/>
+또는 이렇게 생각할 수 있습니다. <br/>
+"Child의 methodB를 override 할 때, super.methodB를 호출하지 않고 새롭게 정의해서 쓰면 되는게 아닌가?"<br/>
+이 경우 만약 Parent 클래스의 methodB를()가 중요한 검증 로직을 포함하고 있었다면 이를 호출하지 않으므로써 필수적인 알고리즘 단계를 건너뛰는 오류를 야기할 수 있으며, 이는 "계약 위반(Contract Violation)"이라는 새로운 문제가 발생하는 것 입니다.<br/>
+<br/>
+### 예시 코드 2
+```dart
+class Parent {
+  void validateBalance() {
+    originMethod();
+    checkNetwork();  // 나중에 추가된 필수 네트워크 체크
+    print("checkNetwork후에 잔액 검증 하는 메서드");
+  }
+  
+  void checkNetwork() { // 새로 추가된 필수 검증 메서드
+    print("네트워크 상태 확인하는 메서드");
+  }
+}
+```
+조금 더 구체적인 예시는 "부모 클래스에 새로운 의존성이 추가되었을 때" 발생하는 문제 입니다.<br/>
+Parent 클래스에 checkNetwork라는 새로운 의존성이 생겨버리면 Parent를 상속하는 많은 클래스들은 이를 알 수 없습니다.<br/>
+이에 따라서 Child 클래스에서 side-effect가 발생하기 쉽습니다.<br/>
+
+## 해결 방안
+
+### 1. 템플릿 메서드 패턴 사용
+```dart
+abstract class Parent {
+  // 템플릿 메서드 - final로 선언하여 오버라이드 방지
+  final void methodA() {
+    step1(); // 하위 클래스에서 구현
+    if (shouldExecuteStep2()) {  // 선택적 기능을 제공하는 hook메서드
+      step2();  // 하위 클래스에서 구현
+    }
+    _commonStep(); // 공통 기능은 접근 불가능하도록 
+  }
+  
+  void step1(); // 추상 메서드 - 반드시 구현해야 함
+  void step2() { // 선택적으로 구현 가능한 메서드 (훅 메서드)
+    print("기본 step2 실행"); // 기본 구현을 제공하고 사용시 추가 구현
+  }
+
+  bool shouldExecuteStep2() { // 훅 메서드 - 실행 여부 결정
+    return false;  // 기본값
+  }
+
+  void _commonStep() {  // private 메서드 - 변경 불가능한 공통 기능
+    print("변경 불가능한 공통 기능 실행");
+  }
+}
+
+// 구현 클래스 1
+class Child1 extends Parent {
+  @override
+  void step1() {
+    print("Child1의 step1 구현");
+  }
+}
+
+// 구현 클래스 2
+class Child2 extends Parent {
+  @override
+  void step1() {
+    print("Child2의 step1 구현");
+  }
+  
+  @override
+  void step2() {
+    print("Child2의 커스텀 step2 구현");
+  }
+    
+  @override
+  bool shouldExecuteStep2() {
+    return true;  // step2 실행하도록 구현
+  }
+}
+```
+템플릿 메서드 패턴은 알고리즘의 구조를 메서드에 정의하고, 일부 단계를 하위 클래스에서 구현할 수 있도록 하는 패턴입니다.<br/> 
+알고리즘의 뼈대는 상위 클래스에서 정의하고, 일부 단계의 구현은 하위 클래스에 위임하는 형태입니다.<br/>
+"템플릿"을 통해 알고리즘의 구조를 명확하게 하고 하위 클래스에서 수정 가능한 부분이 명확히 정의하기 때문에<br/>
+공통 기능의 무결성이 보장되며 확장은 용이하되 기존 구조는 깨지지 않습니다.
+(패턴 자체에 대해서는 다른 글에서 더 자세히 다뤄보겠습니다)
+
+### 2. 컴포지션 사용
+```dart
+class WithdrawValidator {
+  void validate() {
+    print("잔액 검증");
+  }
+}
+
+class BankAccount {
+  final WithdrawValidator validator; // 컴포지션으로, 상속이 아니라 내부변
+  
+  BankAccount(this.validator);
+  
+  void withdrawMoney() {
+    validator.validate();
+    processingWithdraw();
+  }
+}
+```
+컴포지션은 "has-a" 관계를 만드는 것으로, 상속("is-a" 관계) 대신 인스턴스를 내부에 포함시켜 사용하는 방식입니다.<br/>
+상속과 달리 결합도가 매우 낮아 내부 구현 변경에 '덜'취약하며 테스트가 용이한 장점이 있습니다. 
+
+
+### 3. 인터페이스 정의
+```dart
+abstract class BalanceValidator {
+  void validate();
+}
+
+class StandardValidator implements BalanceValidator {
+  @override
+  void validate() {
+    print("표준 잔액 검증");
+  }
+}
+
+class CustomValidator implements BalanceValidator {
+  @override
+  void validate() {
+    print("커스텀 잔액 검증");
+  }
+}
+```
+BalanceValidator라는 부모 클래스의 구현을 포기하고 "인터페이스로 사용"하여 상세 구현을 모두 자식 클래스에서 한다면 해당 문제는 해결됩니다.
+
+#### 정리
+상속에서 오는 고질적인 문제인 Fragile Base Class Problem를 피하기 위해서는 대신 위와 같은 설계 패턴을 사용하여 더 안전하고 유연한 구조를 만드는 것이 좋습니다.
+
+
+
+
