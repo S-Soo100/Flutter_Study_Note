@@ -1,0 +1,226 @@
+# Flutter Provider와 notifyListeners() 완벽 분석
+
+## 개요
+Flutter를 처음 배우기 시작하면 보통 상태 관리의 중요성과 Provider 라이브러리부터 배우게 됩니다. 하지만 원리를 깊이 이해하고 직접 열어본 사람은 많지 않을 것입니다.
+
+이 글에서는 Provider 라이브러리의 핵심인 `notifyListeners()`를 중심으로, 내부 원리와 동작 방식을 분석합니다.
+
+## Provider 공식 문서 및 리포지토리
+- [🚀 Provider pub.dev 링크](https://pub.dev/packages/provider)
+- [🚀 Provider GitHub Repo](https://github.com/rrousselGit/provider)
+- [🚀 InheritedWidget 공식 문서](https://api.flutter.dev/flutter/widgets/InheritedWidget-class.html)
+
+---
+
+## 1. Provider의 뿌리, InheritedWidget
+
+Provider의 핵심 기능은 **위젯 트리에서 멀리 떨어진 위젯들이 상태를 공유하고 변경 시 자동으로 반영되는 것**입니다. 이러한 상태 관리의 근간이 바로 `InheritedWidget`입니다.
+
+Provider 라이브러리의 다양한 Provider위젯들은 모두
+InheritedWidget를 베이스로 제작 되었습니다.
+그리고 InheritedWidget은 ProxyWidget을 상속하고 있는 추상 클래스인데, 몇몇 중요한 특징을 가지고 있습니다.
+
+### InheritedWidget의 핵심 기능
+1. **상태를 하위 위젯 트리에 전달**
+2. **`dependOnInheritedWidgetOfExactType<T>()`로 상태 구독**
+3. **`updateShouldNotify()`를 오버라이드하여 변경 감지**
+
+#### Flutter InheritedWidget 코드 분석
+```dart
+// flutter/lib/src/widgets/framework.dart
+abstract class InheritedWidget extends ProxyWidget {
+  const InheritedWidget({ super.key, required super.child });
+
+  @override
+  InheritedElement createElement() => InheritedElement(this);
+
+  @protected
+  bool updateShouldNotify(covariant InheritedWidget oldWidget);
+}
+```
+- `updateShouldNotify()` → 상태 변경 여부를 감지
+- `createElement()` → `InheritedElement`를 생성하여 관리
+
+이를 기반으로 **직접 InheritedWidget을 활용해 상태 관리**를 구현해 보겠습니다.
+
+---
+
+## 2. InheritedWidget을 사용한 상태 관리
+
+### 1️⃣ InheritedWidget을 활용한 상태 관리 모델
+```dart
+class MyInheritedWidget extends InheritedWidget {
+  final int count;
+  final VoidCallback increment;
+
+  MyInheritedWidget({
+    Key? key,
+    required this.count,
+    required this.increment,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  @override
+  bool updateShouldNotify(MyInheritedWidget oldWidget) {
+    return oldWidget.count != count;
+  }
+}
+```
+
+### 2️⃣ 상태를 관리하는 Stateful 위젯 생성
+```dart
+class InheritedCounterProvider extends StatefulWidget {
+  final Widget child;
+
+  const InheritedCounterProvider({Key? key, required this.child}) : super(key: key);
+
+  @override
+  _InheritedCounterProviderState createState() => _InheritedCounterProviderState();
+}
+
+class _InheritedCounterProviderState extends State<InheritedCounterProvider> {
+  int count = 0;
+
+  void increment() {
+    setState(() {
+      count++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MyInheritedWidget(
+      count: count,
+      increment: increment,
+      child: widget.child,
+    );
+  }
+}
+```
+
+### 3️⃣ 위젯 트리에 InheritedWidget 적용
+```dart
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return InheritedCounterProvider(
+      child: MaterialApp(
+        title: 'Flutter Demo',
+        theme: ThemeData(useMaterial3: false),
+        home: InheritedHomePage(),
+      ),
+    );
+  }
+}
+```
+
+### 4️⃣ 상태를 읽고 UI 업데이트
+```dart
+class InheritedHomePage extends StatelessWidget {
+  const InheritedHomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final counterWidget =
+        context.dependOnInheritedWidgetOfExactType<MyInheritedWidget>();
+
+    return Scaffold(
+      appBar: AppBar(title: Text('InheritedWidget Example')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Counter: ${counterWidget?.count ?? 0}', style: TextStyle(fontSize: 24)),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: counterWidget?.increment,
+              child: Text('Increment'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+---
+
+## 3. notifyListeners() 분석 및 Provider와 비교
+
+### 1️⃣ notifyListeners()의 역할
+Provider에서는 `notifyListeners()`가 호출될 때 UI를 자동으로 다시 빌드합니다.
+
+```dart
+class ChangeNotifier {
+  ObserverList<VoidCallback>? _listeners = ObserverList<VoidCallback>();
+
+  void addListener(VoidCallback listener) {
+    _listeners?.add(listener);
+  }
+
+  void removeListener(VoidCallback listener) {
+    _listeners?.remove(listener);
+  }
+
+  @protected
+  void notifyListeners() {
+    if (_listeners != null) {
+      for (final VoidCallback listener in List<VoidCallback>.from(_listeners!)) {
+        listener();
+      }
+    }
+  }
+}
+```
+
+- `_listeners` 리스트에 UI 업데이트를 수행할 콜백 함수들을 저장
+- `notifyListeners()`가 호출되면 해당 리스트의 모든 리스너 실행 → UI가 변경됨
+
+### 2️⃣ Provider에서 notifyListeners() 호출하기
+```dart
+class CounterModel extends ChangeNotifier {
+  int _count = 0;
+
+  int get count => _count;
+
+  void increment() {
+    _count++;
+    notifyListeners();
+  }
+}
+```
+
+```dart
+ElevatedButton(
+  onPressed: () {
+    context.read<CounterModel>().increment();
+  },
+  child: Text("Increment"),
+),
+```
+
+> `read<T>()`를 사용해야 버튼이 불필요하게 리빌드되지 않음
+
+---
+
+## 4. 정리
+### ✅ InheritedWidget과 Provider 차이점
+| 기능 | InheritedWidget | Provider |
+|------|---------------|----------|
+| 상태 공유 | ✅ 가능 | ✅ 가능 |
+| UI 자동 업데이트 | ❌ 직접 `setState()` 필요 | ✅ `notifyListeners()`로 자동 업데이트 |
+| 확장성 | ❌ 제한적 | ✅ 다양한 Provider 지원 |
+
+Provider는 InheritedWidget을 기반으로 만들어졌지만, 더 강력한 기능을 제공합니다.
+
+### ✅ 핵심 정리
+1. `InheritedWidget`은 상태를 공유하지만 UI 자동 갱신 기능은 없음
+2. Provider는 `notifyListeners()`를 활용하여 UI를 자동 갱신
+3. `context.read<T>()`는 상태를 변경할 때 사용, `context.watch<T>()`는 상태를 감지할 때 사용
