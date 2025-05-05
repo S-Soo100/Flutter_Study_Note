@@ -1,0 +1,275 @@
+이번 시간에는 위젯을 리빌드 하는 전략에 대해서 몇가지 파헤쳐보고자 합니다.
+Consumer, Selector, .read, .watch메서드 등의 주요 컨셉과 사용에 대해서 같이 보겠습니다.
+
+---
+
+### Consumer 위젯의 이해
+- Consumer 위젯은 Provider 패키지에서 제공하는 위젯으로, Provider를 통해 제공되는 상태 변화를 감지하고 해당 상태를 사용하는 위젯을 다시 빌드하는 역할을 합니다. 
+- Consumer로 감싸진 위젯은 자신이 리슨(listen)하고 있는 데이터가 변경될 때마다 자동으로 다시 빌드됩니다. 이 위젯은 위젯 트리의 상위에 있는 Provider로부터 필요한 데이터를 얻어옵니다.   
+```dart
+Consumer<MyModel>(
+  builder: (context, model, child) {
+    return Text(model.someValue);
+  },
+)
+```
+- 컨슈머는 위와 같이 기본적으로 구성 되는데요, `<MyModel>`처럼 제네릭으로 어떤 타입의 데이터를 listen할지 구체적으로 명시 해야 합니다.
+그러면 우리가 이전에 공부했던 위젯 트리에서 해당 제네릭의 프로바이더를 찾아서 필요한 데이터를 긁어오고, notifyListeners()의 알림도 들어줍니다.
+  
+#### 그러면, 똑같은 타입의 프로바이더가 여러개면요?
+- 기본적으로는 위젯 트리 내에서 더 가까운 프로바이더를 우선해서 가져옵니다.
+```dart
+ChangeNotifierProvider<MyModel>( // 첫 번째 MyModel Provider
+  create: (context) => MyModel(data: 'Data from Provider 1'),
+  child: Builder(
+    builder: (context) {
+      return ChangeNotifierProvider<MyModel>( // 두 번째 MyModel Provider (더 가까움)
+        create: (context) => MyModel(data: 'Data from Provider 2'),
+        child: Consumer<MyModel>(
+          builder: (context, myModel, child) {
+            return Text(myModel.data); // Data from Provider 2가 표시
+          },
+        ),
+      );
+    }
+  ),
+);
+```
+  하지만 우리가 알고싶은건 이런게 아니죠, MultiProvider로 같이 꽂아버리면 어떻게 될까요?
+  
+```dart
+MultiProvider(
+  providers: [
+    Provider<MyModel>(create: (_) => MyModel(data: '1번타자')),
+    Provider<MyModel>(create: (_) => MyModel(data: '2번타자')),
+  ],
+  child: MyWidget(),
+);
+```
+- 이런 상상을 하셨다면, 아래같은 에러 부터 보게 됩니다.
+`Error: Multiple providers of the same type found at the same level in the widget tree.`
+ 예외는 프로바이더를 만드신 선배님들이 처리했으니 안심하라구!
+ 
+- 즉, 같은 타입의 프로바이더는, 위젯트리의 같은 위치에 중복 배치가 불가능하며 필수적으로 레벨을 분리해야 하기 때문에, '더 가까운 놈'을 찾는다고만 생각하시면 됩니다.
+
+
+---
+### Consumer 위젯의 구성
+- 다음은 provider패키지의 src내에 있는 Consumer.dart를 일부 발췌한 것 입니다.
+Consumer2~6도 있지만 이건 나중에 ProxyProvider랑 같이 보는게 좋을 거 같아요.
+```
+class Consumer<T> extends SingleChildStatelessWidget {
+  /// {@template provider.consumer.constructor}
+  /// Consumes a [Provider<T>]
+  /// {@endtemplate}
+  Consumer({
+    Key? key,
+    required this.builder,
+    Widget? child,
+  }) : super(key: key, child: child);
+
+  /// {@template provider.consumer.builder}
+  /// Build a widget tree based on the value from a [Provider<T>].
+  ///
+  /// Must not be `null`.
+  /// {@endtemplate}
+  final Widget Function(
+    BuildContext context,
+    T value,
+    Widget? child,
+  ) builder;
+
+  @override
+  Widget buildWithChild(BuildContext context, Widget? child) {
+    return builder(
+      context,
+      Provider.of<T>(context),
+      child,
+    );
+  }
+}
+```
+- 생성자 부터 볼까요?
+builder함수를 필수적으로 전달 받아야 하며 builder 함수는 세 개의 파라미터를 받습니다. 우리가 제시할 프로바이더의 타입`<T>`을 명시해주고, ChangeNotifier에서 notifyListeners()가 호출되면, 해당 Provider를 리슨하는 모든 Consumer 위젯의 builder 함수가 실행됩니다.
+- child와 buildWithChild라는, 위에서 설명하지 않은 파라미터와 메서드가 보입니다. 
+child는 Provider의 데이터 변경에 영향을 받지 않고 리빌드 되지 않는 위젯이며, 아래같이 전달 하는 것도 가능합니다.
+```
+Consumer<MyModel>(
+  builder: ((context, value, child) {
+    return Column(
+      children: [child!, Text("child를 이렇게 사용할 수 있어요.")],
+    );
+  }),
+  child: Text("Consumer의 child 파라미터"),
+),
+```
+- 마찬가지로 buildWithChild는 부모인 `SingleChildStatelessWidget`의 추상 메서드를 구현한 것이며, 개발자는 대부분 생성자를 사용하고 이 메서드를 직접 호출하지는 않습니다. 
+Provider와의 상호작용, 데이터 가져오기, child 위젯 처리 등의 복잡한 로직을 buildWithChild 내부에 캡슐화 한 것입니다.
+---
+
+### Consumer 위젯이 부분적으로 리빌드 되는 이유
+- 부분적인 리빌드란 전체 화면이나 위젯 트리를 다시 빌드하는 대신, 상태가 변경된 특정 부분의 UI만 업데이트하는 것을 말 합니다.
+이것은 데이터 변경이 잦은 서비스를 만들 때,UI성능 최적화에 매우 중요한 역할을 수행합니다. 
+- 예를 들어서 `StatefulWidget`에서 `setState`메서드를 호출하면 일반적으로 해당 위젯 자체와 그 자식 위젯들이 모두 다시 빌드되는 반면, `Consumer` 위젯을 사용하면 상태 변화에 의존하는 특정 위젯만 선택적으로 다시 빌드할 수 있습니다.
+즉, Consumer 위젯으로 특정 위젯을 감싸면, 해당 위젯만이 Provider의 상태 변화에 반응하여 다시 빌드됩니다.
+- 그러면 왜 리빌드 되는걸까요? Consumer의 builder메서드 자체가 직접 Provider의 데이터 변경을 감지하는 것은 아닙니다. Consumer 위젯 내부의 buildWithChild 메서드, 더 정확히는 그 안의 Provider.of<T>(context)가 데이터 변경 감지와 builder 함수 호출을 담당합니다.
+- of메서드는 context.dependOnInheritedWidgetOfExactType을 캡슐화 한 것이니 넘어가고,
+  중요한 것은 윗 부분에 언급한 buildWithChild 메서드 내에서 Provider.of<T>(context)가 호출된다는 것 입니다.
+ 이 다음은 Provider의 기본 동작과도 같죠? 위젯 트리에서 가장 가까운 Provider<T>를 찾으며, 그것이 ChangeNotifierProvider면 ChangeNotifier의 addListener를 호출하여, ChangeNotifier의 데이터 변경을 구독(subscribe) 합니다.
+- Provider.of<T>(context)는 ChangeNotifier의 리스너 중 하나이므로, 데이터가 바뀌어서 notifyListeners() 호출을 받으면 Consumer 위젯을 rebuild시킵니다.
+그러면 마지막으로 buildWithChild는 이 새로운 데이터와 함께 builder 함수를 호출합니다.
+
+---
+### 실제로 부분만 리빌드가 되는가?
+- stateful위젯으로 리빌드마다 카운트를 해주는 기능을 붙여서, Provider의 동작과 전체 스크린의 rebuild가 별도로 일어나는지 확인해보겠습니다.
+  
+- 아래 위젯은 두 가지 기능을 합니다.
+ ** 1. 전체 위젯의 리빌드 추적:**
+  - rebuildCount 변수를 통해 전체 MyHomePage 위젯이 리빌드되는 횟수를 추적합니다.
+  
+ **2. Consumer를 사용한 부분 리빌드:**
+  - 카운터 값 표시를 Consumer<CounterProvider>로 감싸놨으며, CounterProvider의 상태가 변경될 때만 해당 부분이 리빌드됩니다.
+
+```dart
+
+class MyHomePage extends StatefulWidget {
+  MyHomePage({super.key});
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  int rebuildCount = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    rebuildCount++;
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text("current rebuild count is ${rebuildCount}"),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text("current rebuild count is ${rebuildCount}"),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {});
+              },
+              child: const Text('rebuild screen'),
+            ),
+            const Text(
+              '현재 카운트:',
+              style: TextStyle(fontSize: 20),
+            ),
+            Consumer<CounterProvider>(
+              builder: (context, counter, child) {
+                return Text(
+                  '${counter.count}',
+                  style: const TextStyle(
+                      fontSize: 40, fontWeight: FontWeight.bold),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    context.read<CounterProvider>().decrement();
+                  },
+                  child: const Text('-'),
+                ),
+                const SizedBox(width: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    context.read<CounterProvider>().increment();
+                  },
+                  child: const Text('+'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+```
+
+  	<img src="https://velog.velcdn.com/images/s_soo100/post/fd31f47f-6b03-448e-acfa-8398fc80dc1d/image.gif" width="50%"/>
+
+-   rebuild screen 버튼을 누르면 전체 위젯이 리빌드되어 rebuildCount가 증가합니다.
+하지만 + 또는 - 버튼을 눌러 카운터 값을 변경할 때는 Consumer 내부의 Text 위젯만 리빌드되고, 전체 위젯은 리빌드되지 않습니다.
+
+---
+### Selector 위젯의 개요, 강점
+- Selector 위젯은 Provider 패키지에서 제공하는 또 다른 위젯으로, Provider의 데이터 중 특정 부분만 리슨하고 해당 부분이 변경될 때만 위젯을 리빌드하는 데 사용됩니다 
+- Selector는 Consumer에 비해 더욱 세밀한 리빌드 제어를 제공하여 성능 최적화에 유용합니다
+위젯이 Provider의 전체 데이터가 아닌 특정 부분에만 의존하는 경우, Selector를 사용하면 불필요한 리빌드를 방지할 수 있습니다.
+엄청 테크니션한 느낌이 들죠? 
+ - 예를 들어 햄버거, 감자튀김, 콜라를 모두 한 모델에서 관리하고 있다고 가정하고, 남은 콜라의 양을 표시하는 위젯이 하나 있다고 하겠습니다.
+  Consumer를 사용하면 감자튀김을 먹어서 감자튀김 양은 변했지만 콜라 양은 전혀 변하지 않았는데 리빌드를 강제한다면,
+  Selector는 콜라를 마셨을 때만 위젯을 리빌드 해 줍니다.
+  
+```dart
+Selector<MyModel, String>(
+  selector: (context, model) => model.specificValue,
+  builder: (context, value, child) {
+    return Text(value);
+  },
+)
+```
+- 생성자를 보며 설명하자면, MyModel까지는 Consumer와 동일합니다.
+  그 뒤에 붙는 String이 내가 MyModel안에서 주시할 데이터 타입 입니다. 
+  그리고 그 타입의 값을 `selector: (context, model) => model.specificValue` 형태로 콕 찝어서 골라놓고, 이 값이 변하는지만 예의주시 합니다.
+
+---
+### Selector의 심화 사용 
+- Selector 위젯은 shouldRebuild라는 콜백 함수를 쥐어 줄 수 있습니다. 이것은 Selector의 핵심 기능 중 하나로, rebuild 에 조건을 추가할 수 있는 기능입니다.
+- selector 함수가 반환하는 값이 변경되었을 때, 실제로 UI를 rebuild 할 필요가 있는지를 추가적으로 판단하는 역할을 합니다.
+  
+  예를 들어서, 감자튀김의 갯수를 표시하고 있다고 해볼까요?
+  중요한 것은 갯수이지, 감자튀김 각각의 사이즈나 눅눅해진 정도가 아니겠죠? 이 경우 아래처럼 구현 할 수 있습니다.
+
+```dart
+Selector<MyModel, List<int>>(
+  selector: (context, model) => model.potato,
+  shouldRebuild: (previous, next) => previous.length != next.length, 
+  // 리스트의 길이가 변경된 경우에만 rebuild
+  builder: (context, numbers, child) {
+    return Text('감자튀김 ${numbers.length}개 남음');
+  },
+)
+```
+  
+- 위의 Selector는 배열의 길이가 변경될 때만 리빌드 되며, 내부요소가 변경되더라도 길이가 같다면 리빌드 되지 않습니다.
+- 요소가 변경된 건 어떻게 아냐구요? Selector는 DeepCollectionEquality를 사용해서 요소 변경도 반응하게 설계 되었습니다.
+  
+---
+### Read와 Watch등 다른 상태 소비(consume)방식과의 비교
+- Provider 패키지에서는 Consumer와 Selector 외에도 다양한 방식으로 상태에 접근하고 사용할 수 있습니다. 
+  '소비(consume)'한다고 표현하기도 합니다.
+  그리고 프로바이더는 read, watch, Consumer, Selector라는 네 가지 방식을 제공합니다. 
+  각 방식은 상태를 접근하고 UI를 업데이트하는 방식과 성능에 미치는 영향이 다른데, 쉽게 한번 표로 보겠습니다.
+(올려놓고 보니 잘 안보이는거 같네요..)
+
+![](https://velog.velcdn.com/images/s_soo100/post/f3810148-f1db-4fac-829c-dbedde681d0a/image.png)
+
+
+  간단히 정리하면 아래와 같으며, 내가 지금 사용하고자 하는 데이터의 특성에 맞춰서 전략적으로 사용해 보면 좋겠습니다 :)
+- context.read<T>(): 
+상태를 한 번만 읽고, 변경 사항을 감지하지 않습니다.
+- context.watch<T>(): 
+상태를 읽고, 변경 사항을 감지하여 UI를 업데이트합니다.
+- Consumer<T>: 
+상태를 읽고, 변경 사항을 감지하여, 
+builder 함수를 통해 UI의 일부분만 업데이트합니다.
+- Selector<T, S>: 
+상태를 읽고, 특정 부분의 변경 사항만 감지하여, 
+builder 함수를 통해 UI를 업데이트합니다.
