@@ -1,0 +1,157 @@
+이번 시간에는 Flutter에서 Provider가 Element 트리를 어떻게 활용하고, 왜 화면을 다시 그려주는지, 값은 어디다 저장하는건지 조금 더 깊게 파헤쳐보고자 합니다.
+
+그러기 앞서 먼저 Flutter의 기본 골자에 대해서 다시 복습해 보죠.
+
+----
+
+## Flutter의 기본 구조: Widget, Element, RenderObject 트리
+
+Widget: UI를 설명하는 불변(immutable) 객체입니다. 단순한 설계도 역할을 합니다.
+
+Element: Widget의 런타임 표현으로, 실제 사용 중에 상태를 관리하고 연결을 유지합니다.
+
+RenderObject: Element와 연결되어 실제 화면을 구성하고 그림을 그리는 객체입니다.
+
+**즉, Flutter는 Widget → Element → RenderObject로 이어지는 구조를 통해 화면을 구성합니다.**
+provider또한 이 구조를 사용해서 상태를 관리하고 리렌더링을 하게 되는데, 특히 데이터를 효율적으로 전달하기 위해 element 트리를 활용합니다.
+
+---
+## Provider의 Element활용
+
+### 1. Provider의 기본: InheritedWidget 기능 확장
+
+   - (1장 내용)Provider는 Flutter의 InheritedWidget을 기반으로 하여, 데이터 전파와 상위-하위 위젯 간 데이터 공유를 가능하게 합니다.
+
+   - 하지만 정확히 말하면, Provider는 InheritedWidget을 확장(extend)하여 InheritedElement를 통해 상태 관리와 화면 리렌더링을 제어하고 있어요. 여기에 상태관리 기능(DelegateState)을 추가한거죠.
+   
+   - InheritedWidget인은 InheritedElement를 만들어서 관리하는데, Provider는 내부적으로 InheritedWidget의 메커니즘을 extend하고 있기 때문에 마찬가지로 InheritedElement를 사용합니다.
+
+### 2. BuildContext와 Element의 관계
+
+- Flutter에서 BuildContext는 사실상 하나의 Element입니다. build메서드는 보통 `build(BuildContext context)`이렇게 선언되잖아요?
+
+- 모든 위젯이 빌드 될 때에 이(BuildContext context)가 포인터 개념이 되어서 자신의 위치를 알려주게 됩니다.
+
+- 이것을 응용해서 Provider는, Provider.of<T>(context), context.watch<T>() 등을 호출하면, context를 시작으로 가장 가까운 InheritedElement를 탐색하도록 구성되어 있습니다.
+마찬가지로 1장에서 다뤘듯, .of메서드는 `dependOnInheritedWidgetOfExactType`을 래핑해놓은 문법적 설탕이죠
+
+- 자 이제 탐색 과정에서 내가 찾고있는 데이터가 있으면 의존성 등록을 하여, 이후 데이터 변경을 감지할 수 있게 됩니다.
+  
+```dart
+InheritedWidget dependOnInheritedWidgetOfExactType<T extends InheritedWidget>() {
+  registerDependency(this, inheritedElement);
+  return inheritedElement.widget as T;
+}
+```
+  
+  - registerDependency(의존성 등록)에 inheritedElement를 넣잖아요? 
+  해당 Element의 _dependencies 목록에 등록되어, Provider가 데이터 변경(notify) 시 관련 위젯들이 리빌드됩니다.
+ 
+  
+### 3. 데이터 변경 통지 과정
+
+Provider 내부 데이터가 변경되면, 
+  (1)의존성을 등록했던 Consumer 위젯들이 다시 알림을 받고,
+  (2)didChangeDependencies()가 호출되며,
+(3) 마침내 해당 위젯들이 다시 build()됩니다.
+
+이렇게 Element 구조를 이용해 Provider는 효율적으로 화면을 리렌더링합니다.
+  
+---
+  
+## DelegateState의 동작 방식
+  
+  다음은 Provider 내부 구조의 핵심 중 하나인 DelegateState에 대해서 보겠습니다.
+  
+  ### 1. DelegateState란?
+  
+   - Provider 패키지에서 상태 관리와 생명주기를 처리하기 위한 내부 클래스입니다. 이 클래스는 실제 상태 객체(실제 관리하는 값)을 관리하고, 상태 생명주기를 제어합니다.
+   - 또한 실제로 필요할 때까지 상태 객체 생성을 지연시키는 등 리소스 효율성을 향상시키도록 설계되어 있습니다.
+ 
+
+### 2. 내부 구조
+- 이번에도   실제 코드를 보면서 공부해봅시다.
+```dart
+// Provider 패키지 내부에서 꺼내옴 (간략히)
+class _DelegateState<T> {
+  // 상태 값 저장
+  T? _value;
+  bool _hasValue = false;
+
+  // 값에 접근하는 방법, getter사용
+  bool get hasValue => _hasValue;
+  T get value {
+    if (!_hasValue) throw StateError('대충 값 없다는 내용');
+    return _value as T;
+  }
+
+  // 상태 업데이트, 값을 저장해줌!!
+  void update(T newValue) {
+    _value = newValue;
+    _hasValue = true;
+  }
+
+  // 상태 폐기
+  void dispose() {
+    // 리소스 정리 로직
+    _hasValue = false;
+    _value = null;
+  }
+}
+
+```
+- 구성은 생각보다 단순합니다. 그저 상태 객체의 생성 여부를 추적하고, dispose하면 리소스를 정리해주죠
+- 즉, 정리하면 '값을 가지게 되는 컨테이너'이면서,  생명주기(lifecycle)를 관리해주는 놈입니다.
+  
+
+### 3. DelegateState의 작동 흐름
+  
+```dart
+Provider<Counter>(
+  create: (_) => Counter(),
+  child: MyWidget(),
+)
+
+```
+- 이런식으로 Provider를 등록하면, create메서드가 내가 원하는 값 객체(지금은 카운터죠)를 만듭니다.
+- 그 후 DelegateState가 update()로 이 Counter 객체를 저장하고, 값을 보관해줍니다.
+- 이후에 값을 찾는 메서드, 예를 들어서 `context.read<Counter>()` 같은 코드가 호출되면 이제서야 DelegateState가 내부에 저장된 Counter 객체를 value로 꺼내서 우리에게 보여주는거죠.
+- 바로 이 DelegateState가 Element안에 붙어있게 되는데, _InheritedProviderScopeElement 내부를 보면 해당 코드가 있습니다.
+  
+```dart
+class _InheritedProviderScopeElement<T> extends InheritedElement {
+  final _DelegateState<T> _delegateState = _DelegateState<T>();
+}
+```
+
+정리해보면, 
+  **(1)엘리멘트 트리에 올라간 하나의 Provider마다 하나의 엘리멘트, `_InheritedProviderScopeElement`가 만들어지는데**, 
+**  (2) 여기에 하나의 DelegateState가 생성되고(내부 변수로), **
+**  (3)이 친구가 Element와 값을 분리해서 element를 새로 짜더라도 값을 유지해줍니다.**
+  
+
+---
+  
+## 최종 정리 Provider의 데이터 변경 흐름
+
+Provider가 어디에 배치되고, 어떻게 동작하는지를 알아봤고, 값이 어디에 저장되는지 까지 알아봤으니 이제 전체적인 흐름을 다시 보겠습니다.
+  
+### 값의 변경 흐름 추적하기 
+  
+(1)  사용자 액션 발생 (값 입력이나 버튼 클릭 등등)
+
+(2) Provider가 관리하는 객체(T value)가 notifyListeners() 호출
+
+(3) _InheritedProviderScopeElement가 감지
+
+(4) 필요하면 DelegateState에 새로운 값을 update()
+(DelegateState.update(newValue)를 통해 값만 갱신)
+
+(5) 그러고 나서 notifyClients() 호출
+
+(6) 의존성 걸린 Consumer들이 didChangeDependencies() 호출
+
+ (7) Consumer.build()를 통해 리빌드 발생
+
+### 결론
+  **Provider는 Element 트리를 기반으로 DelegateState에 상태를 저장하고, 변경을 감지하여 필요한 부분만 효율적으로 리렌더링하는 구조를 가지고 있습니다.**
